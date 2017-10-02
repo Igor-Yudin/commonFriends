@@ -1,0 +1,433 @@
+{% extends 'friends/base.html' %}
+
+{% load static %}
+
+{% block title %}Common twitter, vk friends{% endblock %}
+
+{% block content %}
+	<div class="container-fluid top-margin-container">
+		<div class="row">
+			<div class="col-6 col-center">
+				{% if errors %}
+					{% for error in errors %}
+						<div class="alert alert-danger alert-dismissible fade show" role="alert">
+						  <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+						    <span aria-hidden="true">&times;</span>
+						  </button>
+						  <strong>Serious error!</strong> {{ error }}.
+						</div>
+					{% endfor %}
+				{% endif %}
+			</div>
+		</div>
+
+		<div class="row text-center">
+			<div class="col-8 col-md-6 col-lg-6 col-xl-5 col-center form-box">
+				<h1>
+					Find common friends for two users!
+				</h1>
+
+				<br>
+
+				<form method="POST">
+
+					{% csrf_token %}
+
+					<div class="btn-group" data-toggle="buttons">
+						<label class="btn btn-twitter btn-lg active">
+							<input type="radio" name="net" value="tw" autocomplete="off" checked>
+							<span class="fa fa-twitter"></span>
+						</label>
+
+						<!-- <label class="btn btn-facebook btn-lg active">
+							<input type="radio" name="net" value="fb" autocomplete="off" checked>
+							<span class="fa fa-facebook"></span>
+						</label> -->
+
+						<label class="btn btn-vk btn-lg">
+							<input type="radio" name="net" value="vk" autocomplete="off">
+							<span class="fa fa-vk"></span>
+						</label>					
+					</div>
+
+					<br>
+
+					<br>
+
+					<div class="input-group">
+						<input type="text" class="form-control" placeholder="Input first id" name="first-friend-id" id="first-id" value="205329423">
+						<span class="input-group-addon"><i id="first-id-icon" class="fa fa-circle-o fa-lg" aria-hidden="true"></i></span>
+					</div>
+
+					<div id="first-id-alert"></div>
+
+					<br>
+
+					<div class="input-group">
+						<input type="text" class="form-control" placeholder="Input second id" name="second-friend-id" id="second-id" value="177096110">
+						<span class="input-group-addon"><i id="second-id-icon" class="fa fa-circle-o fa-lg" aria-hidden="true"></i></span>
+					</div>
+
+					<div id="second-id-alert"></div>
+
+					<br>
+
+					<button id="btn-submit" type="button" class="btn btn-primary btn-lg btn-block">Get list</button>
+
+					<div id="main-alert"></div>
+				</form>
+			</div>
+		</div>
+
+		<br>
+
+		<div class="row text-center">
+			<div class="col-8 col-center" id="search-result">
+			</div>
+		</div>
+	</div>
+
+	<script>
+
+	Option = {
+		Loading: 0,
+		Success: 1,
+		Error: 2,
+		Initial: 3,
+		Warning: 4,
+	}
+
+	function changeIcon(target, option) {
+		$(target).removeClass();
+
+		var classes = '';
+		if (option == Option.Loading)
+			classes = 'fa fa-circle-o-notch fa-spin fa-lg';
+		else if (option == Option.Success)
+			classes = 'fa fa-check-circle fa-lg';
+		else if (option == Option.Error)
+			classes = 'fa fa-times-circle fa-lg';
+		else if (option == Option.Warning)
+			classes = 'fa fa-exclamation-circle fa-lg';
+		else
+			classes = 'fa fa-circle-o fa-lg';
+
+		$(target).addClass(classes);
+	}
+
+	function changeInputColor(id, option) {
+		target = '#' + id;
+		$(target).removeClass();
+
+		var classes = '';
+		if (option == Option.Success)
+			classes = 'form-control correct'
+		else if (option == Option.Error)
+			classes = 'form-control incorrect'
+		else if (option == Option.Warning)
+			classes = 'form-control warning'
+		else
+			classes = 'form-control'
+
+		$(target).addClass(classes);
+	}
+
+	function showHideAlert(id, option, message) {
+		target = '#' + id + '-alert';
+		$(target).empty();
+
+		classes = ''
+		if (option == Option.Success)
+			classes = 'alert alert-success text-left'
+		else if (option == Option.Error)
+			classes = 'alert alert-danger text-left'
+		else if (option == Option.Warning)
+			classes = 'alert alert-warning text-left'
+		else
+			classes = 'alert text-left'
+
+		alertHtml = ''
+
+		if (option == Option.Error)
+			alertHtml = $('<div></div>').append('<strong>Error!</strong>', ' ', message);
+		else if (option == Option.Warning)
+			alertHtml = $('<div></div>').append('<strong>Warning!</strong>', ' ', message);
+
+		if (alertHtml != '') {
+			alertHtml.addClass(classes);
+			alertHtml.attr('role', 'alert');
+			$(target).append('<br>', alertHtml);
+		}
+	}
+
+	function setCallback(id, callback, delay) {
+		var timer = null;
+		input = document.getElementById(id);
+	    input.oninput = function() {
+	        if (timer) {
+	            window.clearTimeout(timer);
+	        }
+	        timer = window.setTimeout( function() {
+	            timer = null;
+	            callback(id);
+	        }, delay );
+	    };
+	    input = null;
+	}
+
+	function validateId(id) {
+		function isNumeric(str) {
+			var hasAlgebraicSymbols = str.indexOf('.') > -1 ||
+									  str.indexOf('+') > -1 ||
+									  str.indexOf(',') > -1 ||
+									  str.indexOf('-') > -1;
+			return !isNaN(str) && !hasAlgebraicSymbols;
+		}
+
+		valid = isNumeric(id) && id != '';
+		if (valid)
+			return {'isValid': true}
+		else
+			return {'isValid': false,
+					'message': 'That id is not valid.<br>Make sure:<ul><li>it is numeric only</li></ul>'}
+	}
+
+	function doRequest(id) {
+			var iconId = '#' + id + '-icon';
+			changeIcon(iconId, Option.Loading);
+
+			var inputData = {'net': $('[name=net]:checked').val(),
+							 'userId': $('#' + id).val(),
+							 'csrfmiddlewaretoken': $('input[name=csrfmiddlewaretoken]').val()};
+
+			if (inputData.userId == '') {
+				changeIcon(iconId, Option.Initial);
+				changeInputColor(id, Option.Initial);
+				showHideAlert(id, Option.Initial, null);
+				return;
+			}
+
+			res = validateId(inputData.userId);
+			if (!res.isValid) {
+				changeIcon(iconId, Option.Error);
+				changeInputColor(id, Option.Error);
+				showHideAlert(id, Option.Error, res.message);
+				return;
+			}
+
+			$.ajax({
+				type: 'POST',
+				url: "{% url 'check_user_id_ajax' %}",
+				data: inputData,
+				dataType: 'json',
+				success: function(response) {
+					if(response.correct) {
+						changeIcon(iconId, Option.Success);
+						changeInputColor(id, Option.Success);
+						showHideAlert(id, Option.Success, response.message);
+					}
+					else {
+						changeIcon(iconId, Option.Error);
+						changeInputColor(id, Option.Error);
+						showHideAlert(id, Option.Error, response.message);
+					}
+				},
+				error: function() {
+					changeIcon(iconId, Option.Warning);
+					changeInputColor(id, Option.Warning);
+					showHideAlert(id, Option.Warning, 'Impossible to get a response.');
+				}
+			});
+		}
+
+	$(':text').each(function() {
+		setCallback($(this).attr('id'), doRequest, 300);
+	})
+
+	$('label.btn').each(function() {
+		$(this).on('click', function() {
+			var net = $('[name=net]:checked').val();
+			if (net == 'vk') {
+				$('#first-id').val('205329423');
+				$('#second-id').val('177096110');
+			}
+			else if (net == 'tw') {
+				$('#first-id').val('222215740');
+				$('#second-id').val('1352634594');
+			}
+			$(':text').each(function() {
+				$(this).trigger('input');
+			})
+		})
+	})
+
+	function showHideMainAlert(option, message) {
+		target = '#main-alert';
+		$(target).empty();
+
+		if (option == Option.Success)
+			return;
+		alertHtml = $('<div></div>');
+
+		btn = '<button type="button" class="close" data-dismiss="alert" aria-label="Close"\
+					<span aria-hidden="true">&times;</span>\
+			   </button>';
+
+		alertHtml.append(btn);
+		
+		if (option == Option.Error) {
+			alertHtml.append('<strong>Error!</strong>', ' ', message);
+			classes = 'alert alert-danger alert-dismissible fade show text-left'
+		}
+		else if (option == Option.Warning) {
+			alertHtml.append('<strong>Warning!</strong>', ' ', message);
+			classes = 'alert alert-warning alert-dismissible fade show text-left'
+		}
+
+		alertHtml.addClass(classes).attr('role', 'alert');
+		$(target).append('<br>', alertHtml);
+	}
+
+	function setSubmitBtnStyle(option) {
+		target = '#btn-submit';
+		$(target).empty();
+
+		if (option == Option.Loading) {
+			$(target).append('<span class="fa fa-circle-o-notch fa-spin fa-lg"></span>');
+		}
+		else if (option == Option.Initial) {
+			$(target).append('Get list');
+		}
+	}
+
+	function buildEmptyCardDeck() {
+		return $('<div></div>').addClass('card-deck');
+	}
+
+	function buildEmptyCard() {
+		return $('<div></div>').addClass('card empty-card');
+	}
+
+	Array.prototype.isEmpty = function() {
+		return this.length == 0;
+	}
+
+	function showFriendsList(friendsList) {
+		target = '#search-result';
+		$(target).empty();
+
+		if (friendsList.isEmpty()) {
+			$(target).append('<h3>These users have no common friends</h3>');
+			return;
+		}
+
+		cardsInDeck = 3;
+		cardDeck = buildEmptyCardDeck();
+
+		for(i = 0; i < friendsList.length; i++) {
+
+			userData = friendsList[i];
+
+			console.log(userData);
+
+			card = buildUserCard(userData);
+
+			if (i % cardsInDeck == 0 && i != 0) {
+				$(target).append(cardDeck, '<br>');
+				cardDeck = buildEmptyCardDeck();
+			}
+
+			cardDeck.append(card);
+
+			if (i == friendsList.length - 1) {
+				cardDeck.append(card);
+				
+				cardsInLastRow = friendsList.length % cardsInDeck;
+
+				if (cardsInLastRow != 0) {
+					for (j = 0; j < cardsInDeck - cardsInLastRow; j++)
+						cardDeck.append(buildEmptyCard());
+				}
+
+				$(target).append(cardDeck);
+			}
+		}
+	}
+
+	function checkIds() {
+		firstId = $('#first-id').val();
+		secondId = $('#second-id').val();
+
+		result1 = validateId(firstId);
+		result2 = validateId(secondId);
+
+		if (result1.isValid && result2.isValid)
+			return {'ok': true,
+					'message': null};
+		else
+			return {'ok': false,
+					'message': 'Please, make sure that:<br>\
+								<ul><li>ids are numeric only</li></ul>\
+								<ul><li>both ids are not empty</li></ul>'};
+	}
+
+	function buildUserCard(userData) {
+		defaultMalePhoto = "{% static 'images/male.png' %}"
+		defaultFemalePhoto = "{% static 'images/female.png' %}"
+
+		if(userData.photo == '')
+			photo = userData.sex == 'male' ? defaultMalePhoto : defaultFemalePhoto;
+		else
+			photo = userData.photo
+		card = $('<div></div>').addClass('card');
+		img = $('<img></img>').addClass('card-img-top')
+							  .attr('src', photo)
+							  .attr('alt', userData.name);
+		cardBody = $('<div></div>').addClass('card-body');
+		cardTitle = $('<h5></h5>').addClass('card-title');
+		cardBody.append(cardTitle.text(userData.name));
+		card.append(img, cardBody);
+		return card;
+	}
+
+	function handleSubmitBtnClick() {
+		idsCheckingResult = checkIds();
+
+		if (!idsCheckingResult.ok) {
+			showHideMainAlert(Option.Error,
+							  idsCheckingResult.message);
+			return;
+		}
+
+		setSubmitBtnStyle(Option.Loading);
+
+		dataToSubmit = {'firstId': $('#first-id').val(),
+					  	'secondId': $('#second-id').val(),
+					  	'net': $('[name=net]:checked').val(),
+					  	'csrfmiddlewaretoken': $('input[name=csrfmiddlewaretoken]').val()}
+		$.ajax({
+			type: 'POST',
+			url: "{% url 'get_list_ajax' %}",
+			data: dataToSubmit,
+			dataType: 'json',
+			success: function(response) {
+				setSubmitBtnStyle(Option.Initial);
+
+				if (response.ok) {
+					showHideMainAlert(Option.Success, null);
+					showFriendsList(response.friendsList);
+				}
+				else {
+					showHideMainAlert(Option.Error, response.message);
+				}
+			},
+			error: function() {
+				setSubmitBtnStyle(Option.Initial);
+				showHideMainAlert(Option.Warning, 'Impossible to get a response.');
+			}
+		});
+	}
+
+	$('#btn-submit').on('click', handleSubmitBtnClick)
+	</script>
+{% endblock %}
